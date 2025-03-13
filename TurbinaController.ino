@@ -51,9 +51,9 @@ void handleRoot() {
                 "<head>"
                 "<meta charset='UTF-8'>"
                 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                "<title>Turbine Control</title>"
+                "<title>Recirculador de aire</title>"
                 "<link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>"
-                 "<style>"
+                "<style>"
                 "#overlay {"
                 "  position: fixed;"
                 "  top: 0;"
@@ -74,31 +74,39 @@ void handleRoot() {
                 "</head>"
                 "<body>"
                 "<div class='container mt-5 text-center'>"
-                "<h1 class='mb-3'>Turbine Control</h1>"
+                "<h1 class='mb-3'>Recirculador de aire</h1>"
                 "<div class='card shadow-lg p-4'>"
-                "<h4 class='mb-3'>Current Time: <span id='timeDisplay'>" + timeClient.getFormattedTime() + "</span></h4>"
-                "<h4 class='mb-3'>Turbine Status: <span id='statusDisplay' class='fw-bold'>" + (relayState ? "ON" : "OFF") + "</span></h4>"
-                
+                "<h4 class='mb-3'>Hora actual: <span id='timeDisplay'>" + timeClient.getFormattedTime() + "</span></h4>"
+                "<h4 class='mb-3'>Estado de la turbina: <span id='statusDisplay' class='fw-bold'>" + (relayState ? "ON" : "OFF") + "</span></h4>"
+
                 // SPINNER ADDED HERE
                 "<div id='overlay'>"
                 "  <div class='spinner-border text-light' id='spinner' role='status'>"
                 "    <span class='visually-hidden'>Loading...</span>"
                 "  </div>"
                 "</div>"
-                
+
                 "<div class='d-flex justify-content-center gap-3'>"
-                "<button id='enableBtn' class='btn btn-success btn-lg " + (relayState ? "disabled" : "") + "' onclick='toggleRelay(true)'>Enable</button>"
-                "<button id='disableBtn' class='btn btn-danger btn-lg " + (!relayState ? "disabled" : "") + "' onclick='toggleRelay(false)'>Disable</button>"
+                "<button id='enableBtn' class='btn btn-success btn-lg " + (relayState ? "disabled" : "") + "' onclick='toggleRelay(true)'>Prender</button>"
+                "<button id='disableBtn' class='btn btn-danger btn-lg " + (!relayState ? "disabled" : "") + "' onclick='toggleRelay(false)'>Apagar</button>"
+                "</div>"
+                "<div class='row justify-content-center' style='margin-top: 10px;'>"
+                "<div class='col-md-2'>"
+                "<div class='form-check form-switch'>"
+                "<input class='form-check-input' type='checkbox' role='switch' id='manualOverride' onchange='toggleManualOverride(this.checked)'>"
+                "<label class='form-check-label' for='manualOverride'>Modo automatico</label>"
+                "</div>"
+                "</div>"
                 "</div>"
                 "<br/>"
-                "<h4 style='margin-top: 30px;'>Config</h4>"
+                "<h4 style='margin-top: 30px;'>Configuracion</h4>"
                 "<div class='row justify-content-center'>"
                 "<div class='col-md-3'>"
-                "<label>Relay Duration (minutes):</label>"
+                "<label>Run time (minutos):</label>"
                 "<input type='number' id='relayDuration' class='form-control' value='" + String(RELAY_DURATION / 60000) + "'>"
-                "<label>Relay Wait (minutes):</label>"
+                "<label>Tiempo de espera (minutos):</label>"
                 "<input type='number' id='relayWait' class='form-control' value='" + String(RELAY_WAIT / 60000) + "'>"
-                "<button class='btn btn-primary mt-2' onclick='updateConfig()'>Update Config</button>"
+                "<button class='btn btn-primary mt-2' onclick='updateConfig()'>Guardar</button>"
                 "</div>"
                 "</div>"
                 "</div>"
@@ -127,6 +135,9 @@ void handleRoot() {
                 "  showSpinner();"
                 "  fetch(state ? '/enable' : '/disable').then(() => updateStatus());"
                 "}"
+                "function toggleManualOverride(state) {"
+                "  fetch(state ? '/manualOff' : '/manualOn');"
+                "}"
                 "function updateConfig() {"
                 "  showSpinner();"
                 "  const duration = document.getElementById('relayDuration').value * 60000;"
@@ -154,8 +165,8 @@ void handleDisable() {
 }
 
 void handleStatus() {
-    String json = "{\"relay\":" + String(relayState) + ",\"time\":\"" + timeClient.getFormattedTime() + "\"}";
-    server.send(200, "application/json", json);
+  String json = "{\"relay\":" + String(relayState) + ",\"time\":\"" + timeClient.getFormattedTime() + "\"}";
+  server.send(200, "application/json", json);
 }
 
 void handleConfig() {
@@ -163,8 +174,15 @@ void handleConfig() {
   if (server.hasArg("wait")) RELAY_WAIT = server.arg("wait").toInt();
   server.send(200, "text/plain", "Configuration updated");
 }
+void handleManualOn() {
+  manualOverride = true;
+  server.send(200, "text/plain", "Manual override enabled");
+}
 
-
+void handleManualOff() {
+  manualOverride = false;
+  server.send(200, "text/plain", "Manual override disabled");
+}
 
 void setup() {
   Serial.begin(115200);
@@ -216,6 +234,8 @@ void setup() {
   server.on("/disable", handleDisable);
   server.on("/status", handleStatus);
   server.on("/config", HTTP_POST, handleConfig);
+  server.on("/manualOn", handleManualOn);
+  server.on("/manualOff", handleManualOff);
   server.begin();
 }
 
