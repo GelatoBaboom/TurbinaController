@@ -60,6 +60,12 @@ void handleRoot() {
                 "<div class='card shadow-lg p-4'>"
                 "<h4 class='mb-3'>Current Time: <span id='timeDisplay'>" + timeClient.getFormattedTime() + "</span></h4>"
                 "<h4 class='mb-3'>Turbine Status: <span id='statusDisplay' class='fw-bold'>" + (relayState ? "ON" : "OFF") + "</span></h4>"
+                
+                // SPINNER ADDED HERE
+                "<div id='spinner' class='spinner-border text-primary' style='display:none;' role='status'>"
+                "<span class='visually-hidden'>Loading...</span>"
+                "</div>"
+                
                 "<div class='d-flex justify-content-center gap-3'>"
                 "<button id='enableBtn' class='btn btn-success btn-lg " + (relayState ? "disabled" : "") + "' onclick='toggleRelay(true)'>Enable</button>"
                 "<button id='disableBtn' class='btn btn-danger btn-lg " + (!relayState ? "disabled" : "") + "' onclick='toggleRelay(false)'>Disable</button>"
@@ -79,28 +85,42 @@ void handleRoot() {
                 "</div>"
                 "<script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>"
                 "<script>"
+                "var updateInterval = null;"
+                "function showSpinner() {"
+                "  document.getElementById('spinner').style.display = 'inline-block';"
+                "}"
+                "function hideSpinner() {"
+                "  document.getElementById('spinner').style.display = 'none';"
+                "}"
                 "function updateStatus() {"
+                "  clearInterval(updateInterval);"
                 "  fetch('/status').then(response => response.json()).then(data => {"
                 "    document.getElementById('timeDisplay').innerText = data.time;"
                 "    document.getElementById('statusDisplay').innerText = data.relay ? 'ON' : 'OFF';"
                 "    document.getElementById('enableBtn').classList.toggle('disabled', data.relay);"
                 "    document.getElementById('disableBtn').classList.toggle('disabled', !data.relay);"
-                "  });"
+                "    updateInterval = setInterval(updateStatus, 2000);"
+                "  }).finally(hideSpinner);"
                 "}"
                 "function toggleRelay(state) {"
-                "  fetch(state ? '/enable' : '/disable').then(() => updateStatus());"
+                "  showSpinner();"
+                "  fetch(state ? '/enable' : '/disable').then(/*() => updateStatus()*/)"
+                "    .finally(hideSpinner);"
                 "}"
                 "function updateConfig() {"
+                "  showSpinner();"
                 "  const duration = document.getElementById('relayDuration').value * 60000;"
                 "  const wait = document.getElementById('relayWait').value * 60000;"
                 "  fetch('/config?duration=' + duration + '&wait=' + wait, { method: 'POST' });"
                 "}"
-                "setInterval(updateStatus, 2000);"
+                "updateInterval = setInterval(updateStatus, 2000);"
                 "</script>"
                 "</body>"
                 "</html>";
+
   server.send(200, "text/html", html);
 }
+
 void handleEnable() {
   digitalWrite(RELAY_PIN, LOW);
   relayState = true;
@@ -186,7 +206,7 @@ void loop() {
 
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
-  //int totalMinutes = currentHour * 60 + currentMinute;
+  int totalMinutes = currentHour * 60 + currentMinute;
 
   // If manual mode is ON, auto-disable after 5 min
   //    if (manualOverride && relayState && millis() - relayStartTime >= RELAY_DURATION) {
@@ -204,7 +224,7 @@ void loop() {
   Serial.print("relay state: ");
   Serial.println(relayState);
 
-  if (!manualOverride && currentHour > 9 && currentHour < 23) {
+  if (!manualOverride && totalMinutes > 570 && currentHour < 23) {
     if (!relayState) {
       if ((millis() - relayStateMil) > RELAY_WAIT) {
         digitalWrite(RELAY_PIN, LOW);
