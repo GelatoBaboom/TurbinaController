@@ -28,8 +28,8 @@ bool manualOverride = false;
 bool relayState = false;
 unsigned long relayStartTime = 0;
 unsigned long relayStateMil = 0;
-const unsigned long RELAY_DURATION = 2 * 60 * 1000; // 2 minutes in milliseconds
-const unsigned long RELAY_WAIT = 10 * 60 * 1000; // 10 minutes in milliseconds
+unsigned long RELAY_DURATION = 2 * 60 * 1000; // 2 minutes in milliseconds
+unsigned long RELAY_WAIT = 10 * 60 * 1000; // 10 minutes in milliseconds
 
 String getHTTPTime() {
   WiFiClient client;
@@ -46,67 +46,84 @@ String getHTTPTime() {
   return "Error fetching time";
 }
 void handleRoot() {
-    String html = "<!DOCTYPE html>"
-                  "<html lang='en'>"
-                  "<head>"
-                  "<meta charset='UTF-8'>"
-                  "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                  "<title>Recirculador de aire</title>"
-                  "<link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>"
-                  "</head>"
-                  "<body>"
-                  "<div class='container mt-5 text-center'>"
-                  "<h1 class='mb-3'>Recirculador de aire</h1>"
-                  "<div class='card shadow-lg p-4'>"
-                  "<h4 class='mb-3'>Hora actual: <span id='timeDisplay'>" + timeClient.getFormattedTime() + "</span></h4>"
-                  "<h4 class='mb-3'>Estado de la turbina: <span id='statusDisplay' class='fw-bold'>" + (relayState ? "ON" : "OFF") + "</span></h4>"
-                  "<div class='d-flex justify-content-center gap-3'>"
-                  "<button id='enableBtn' class='btn btn-success btn-lg " + (relayState ? "disabled" : "") + "' onclick='toggleRelay(true)'>Prender</button>"
-                  "<button id='disableBtn' class='btn btn-danger btn-lg " + (!relayState ? "disabled" : "") + "' onclick='toggleRelay(false)'>Apagar</button>"
-                  "</div>"
-                  "</div>"
-                  "</div>"
-                  "<script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>"
-                  "<script>"
-                  "function updateStatus() {"
-                  "  fetch('/status').then(response => response.json()).then(data => {"
-                  "    document.getElementById('timeDisplay').innerText = data.time;"
-                  "    document.getElementById('statusDisplay').innerText = data.relay ? 'ON' : 'OFF';"
-                  "    document.getElementById('enableBtn').classList.toggle('disabled', data.relay);"
-                  "    document.getElementById('disableBtn').classList.toggle('disabled', !data.relay);"
-                  "  });"
-                  "}"
-                  "function toggleRelay(state) {"
-                  "  fetch(state ? '/enable' : '/disable').then(() => updateStatus());"
-                  "}"
-                  "setInterval(updateStatus, 2000);"
-                  "</script>"
-                  "</body>"
-                  "</html>";
-    server.send(200, "text/html", html);
+  String html = "<!DOCTYPE html>"
+                "<html lang='en'>"
+                "<head>"
+                "<meta charset='UTF-8'>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+                "<title>Turbine Control</title>"
+                "<link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>"
+                "</head>"
+                "<body>"
+                "<div class='container mt-5 text-center'>"
+                "<h1 class='mb-3'>Turbine Control</h1>"
+                "<div class='card shadow-lg p-4'>"
+                "<h4 class='mb-3'>Current Time: <span id='timeDisplay'>" + timeClient.getFormattedTime() + "</span></h4>"
+                "<h4 class='mb-3'>Turbine Status: <span id='statusDisplay' class='fw-bold'>" + (relayState ? "ON" : "OFF") + "</span></h4>"
+                "<div class='d-flex justify-content-center gap-3'>"
+                "<button id='enableBtn' class='btn btn-success btn-lg " + (relayState ? "disabled" : "") + "' onclick='toggleRelay(true)'>Enable</button>"
+                "<button id='disableBtn' class='btn btn-danger btn-lg " + (!relayState ? "disabled" : "") + "' onclick='toggleRelay(false)'>Disable</button>"
+                "</div>"
+                "<br/>"
+                "<h4 style='margin-top: 30px;'>Config</h4>"
+                "<div class='row justify-content-center'>"
+                "<div class='col-md-3'>"
+                "<label>Relay Duration (minutes):</label>"
+                "<input type='number' id='relayDuration' class='form-control' value='" + String(RELAY_DURATION / 60000) + "'>"
+                "<label>Relay Wait (minutes):</label>"
+                "<input type='number' id='relayWait' class='form-control' value='" + String(RELAY_WAIT / 60000) + "'>"
+                "<button class='btn btn-primary mt-2' onclick='updateConfig()'>Update Config</button>"
+                "</div>"
+                "</div>"
+                "</div>"
+                "</div>"
+                "<script src='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'></script>"
+                "<script>"
+                "function updateStatus() {"
+                "  fetch('/status').then(response => response.json()).then(data => {"
+                "    document.getElementById('timeDisplay').innerText = data.time;"
+                "    document.getElementById('statusDisplay').innerText = data.relay ? 'ON' : 'OFF';"
+                "    document.getElementById('enableBtn').classList.toggle('disabled', data.relay);"
+                "    document.getElementById('disableBtn').classList.toggle('disabled', !data.relay);"
+                "  });"
+                "}"
+                "function toggleRelay(state) {"
+                "  fetch(state ? '/enable' : '/disable').then(() => updateStatus());"
+                "}"
+                "function updateConfig() {"
+                "  const duration = document.getElementById('relayDuration').value * 60000;"
+                "  const wait = document.getElementById('relayWait').value * 60000;"
+                "  fetch('/config?duration=' + duration + '&wait=' + wait, { method: 'POST' });"
+                "}"
+                "setInterval(updateStatus, 2000);"
+                "</script>"
+                "</body>"
+                "</html>";
+  server.send(200, "text/html", html);
 }
 void handleEnable() {
-  manualOverride = true;
-  digitalWrite(RELAY_PIN, LOW); // Active LOW relay
+  digitalWrite(RELAY_PIN, LOW);
   relayState = true;
-  relayStartTime = millis(); // Start timer for auto-off
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Turbine enabled");
-  relayStateMil = millis();
+  server.send(200, "text/plain", "Turbine enabled");
 }
 
 void handleDisable() {
-  manualOverride = true;
-  digitalWrite(RELAY_PIN, HIGH); // Active LOW relay
+  digitalWrite(RELAY_PIN, HIGH);
   relayState = false;
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Turbine disabled");
-  relayStateMil = millis();
+  server.send(200, "text/plain", "Turbine disabled");
 }
+
 void handleStatus() {
     String json = "{\"relay\":" + String(relayState) + ",\"time\":\"" + timeClient.getFormattedTime() + "\"}";
     server.send(200, "application/json", json);
 }
+
+void handleConfig() {
+  if (server.hasArg("duration")) RELAY_DURATION = server.arg("duration").toInt();
+  if (server.hasArg("wait")) RELAY_WAIT = server.arg("wait").toInt();
+  server.send(200, "text/plain", "Configuration updated");
+}
+
 
 
 void setup() {
@@ -158,6 +175,7 @@ void setup() {
   server.on("/enable", handleEnable);
   server.on("/disable", handleDisable);
   server.on("/status", handleStatus);
+  server.on("/config", HTTP_POST, handleConfig);
   server.begin();
 }
 
@@ -192,7 +210,7 @@ void loop() {
         digitalWrite(RELAY_PIN, LOW);
         Serial.println("ON!");
         relayState = true;
-        relayStateMil = millis(); 
+        relayStateMil = millis();
       }
     }
     if (relayState) {
@@ -213,7 +231,7 @@ void loop() {
         Serial.println("OFF!");
         relayState = false;
         relayStateMil = millis();
-        manualOverride=false;
+        manualOverride = false;
       }
     }
   }
