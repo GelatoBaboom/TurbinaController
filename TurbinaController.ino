@@ -93,7 +93,7 @@ void handleRoot() {
                 "<div class='row justify-content-center' style='margin-top: 10px;'>"
                 "<div class='col-md-2'>"
                 "<div class='form-check form-switch'>"
-                "<input class='form-check-input' type='checkbox' role='switch' id='manualOverride' onchange='toggleManualOverride(this.checked)'>"
+                "<input class='form-check-input' type='checkbox' "+ (!manualOverride ? "checked='checked'" : "") + " role='switch' id='manualOverride' onchange='toggleManualOverride(this.checked)'>"
                 "<label class='form-check-label' for='manualOverride'>Modo automatico</label>"
                 "</div>"
                 "</div>"
@@ -155,12 +155,14 @@ void handleRoot() {
 void handleEnable() {
   digitalWrite(RELAY_PIN, LOW);
   relayState = true;
+  relayStateMil = millis();
   server.send(200, "text/plain", "Turbine enabled");
 }
 
 void handleDisable() {
   digitalWrite(RELAY_PIN, HIGH);
   relayState = false;
+  relayStateMil = millis();
   server.send(200, "text/plain", "Turbine disabled");
 }
 
@@ -176,11 +178,17 @@ void handleConfig() {
 }
 void handleManualOn() {
   manualOverride = true;
+  digitalWrite(RELAY_PIN, HIGH);
+  relayState = false;
+  relayStateMil = millis();
   server.send(200, "text/plain", "Manual override enabled");
 }
 
 void handleManualOff() {
   manualOverride = false;
+  digitalWrite(RELAY_PIN, LOW);
+  relayState = true;
+  relayStateMil = millis();
   server.send(200, "text/plain", "Manual override disabled");
 }
 
@@ -246,7 +254,7 @@ void loop() {
 
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
-  int totalMinutes = currentHour * 60 + currentMinute;
+  int totalMinutes = (currentHour * 60) + currentMinute;
 
   // If manual mode is ON, auto-disable after 5 min
   //    if (manualOverride && relayState && millis() - relayStartTime >= RELAY_DURATION) {
@@ -282,18 +290,22 @@ void loop() {
       }
 
     }
-  }
-  if (manualOverride)
-  {
-    if (relayState) {
-      if ((millis() - relayStateMil) > RELAY_DURATION) {
-        digitalWrite(RELAY_PIN, HIGH);
-        Serial.println("OFF!");
-        relayState = false;
-        relayStateMil = millis();
-        manualOverride = false;
-      }
+  } else {
+    if (!manualOverride && relayState) {
+      digitalWrite(RELAY_PIN, HIGH);
+      Serial.println("OFF!");
+      relayState = false;
     }
   }
-
+  //  if (manualOverride)
+  //  {
+  //    if (relayState) {
+  //      if ((millis() - relayStateMil) > RELAY_DURATION) {
+  //        digitalWrite(RELAY_PIN, HIGH);
+  //        Serial.println("OFF!");
+  //        relayState = false;
+  //        relayStateMil = millis();
+  //      }
+  //    }
+  //  }
 }
