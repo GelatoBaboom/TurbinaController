@@ -31,6 +31,9 @@ unsigned long relayStateMil = 0;
 unsigned long RELAY_DURATION = 2 * 60 * 1000; // 2 minutes in milliseconds
 unsigned long RELAY_WAIT = 10 * 60 * 1000; // 10 minutes in milliseconds
 
+unsigned long lastNtpUpdate = 0;
+const unsigned long NTP_UPDATE_INTERVAL = 60 * 60 * 1000; // cada 10 minutos
+
 String getHTTPTime() {
   WiFiClient client;
   HTTPClient http;
@@ -93,7 +96,7 @@ void handleRoot() {
                 "<div class='row justify-content-center' style='margin-top: 10px;'>"
                 "<div class='col-md-2'>"
                 "<div class='form-check form-switch'>"
-                "<input class='form-check-input' type='checkbox' "+ (!manualOverride ? "checked='checked'" : "") + " role='switch' id='manualOverride' onchange='toggleManualOverride(this.checked)'>"
+                "<input class='form-check-input' type='checkbox' " + (!manualOverride ? "checked='checked'" : "") + " role='switch' id='manualOverride' onchange='toggleManualOverride(this.checked)'>"
                 "<label class='form-check-label' for='manualOverride'>Modo automatico</label>"
                 "</div>"
                 "</div>"
@@ -248,9 +251,16 @@ void setup() {
 }
 
 void loop() {
-  delay(1000);
-  timeClient.update();
+  //delay(1000);
   server.handleClient();
+  if (millis() - lastNtpUpdate > NTP_UPDATE_INTERVAL) {
+    if (timeClient.update()) {
+      Serial.println("Hora actualizada OK.");
+    } else {
+      Serial.println("Fallo al actualizar hora NTP.");
+    }
+    lastNtpUpdate = millis();
+  }
 
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
