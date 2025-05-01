@@ -23,16 +23,19 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", -3 * 3600, 60000); // Argentina UTC
 ESP8266WebServer server(80);
 
 // Relay pin
-# define RELAY_PIN D4
+# define RELAY_PIN D3
+# define LED_PIN D4
 bool manualOverride = false;
 bool relayState = false;
+bool ledState = false;
 unsigned long relayStartTime = 0;
 unsigned long relayStateMil = 0;
 unsigned long RELAY_DURATION = 2 * 60 * 1000; // 2 minutes in milliseconds
 unsigned long RELAY_WAIT = 10 * 60 * 1000; // 10 minutes in milliseconds
 
+unsigned long ledBlinkWait = 0;
 unsigned long lastNtpUpdate = 0;
-const unsigned long NTP_UPDATE_INTERVAL = 60 * 60 * 1000; // cada 10 minutos
+const unsigned long NTP_UPDATE_INTERVAL = 300 * 60 * 1000; // cada 300 minutos
 
 String getHTTPTime() {
   WiFiClient client;
@@ -198,6 +201,7 @@ void handleManualOff() {
 void setup() {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH); // Default OFF
 
 
@@ -224,12 +228,15 @@ void setup() {
   timeClient.begin();
   Serial.println("Fetching time...");
   int retryCount = 0;
+  bool ledStat = false;
   while (!timeClient.update() && retryCount < 10) {
+    digitalWrite(LED_PIN, ledStat ? HIGH : LOW);
+    ledStat = !ledStat;
     Serial.print(".");
     delay(1000); // Wait and retry
     retryCount++;
   }
-
+  digitalWrite(LED_PIN, HIGH);
   if (retryCount >= 10) {
     Serial.println("Failed to get NTP time! Using HTTP time as fallback.");
     Serial.println(getHTTPTime());
@@ -253,6 +260,18 @@ void setup() {
 void loop() {
   //delay(1000);
   server.handleClient();
+  if (millis() - ledBlinkWait > (ledState ? 100 : 5000)) {
+    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+    ledState = !ledState;
+    ledBlinkWait = millis();
+
+  }
+  while (WiFi.status() != WL_CONNECTED) {
+    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+    ledState = !ledState;
+    delay(500);
+
+  }
   if (millis() - lastNtpUpdate > NTP_UPDATE_INTERVAL) {
     if (timeClient.update()) {
       Serial.println("Hora actualizada OK.");
@@ -261,6 +280,7 @@ void loop() {
     }
     lastNtpUpdate = millis();
   }
+
 
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
@@ -273,16 +293,16 @@ void loop() {
   //        manualOverride = false;
   //    }
 
-  Serial.print("milis: ");
-  Serial.println(relayStateMil);
-  Serial.print("currentHour: ");
-  Serial.println(currentHour);
-  Serial.print("timer: ");
-  Serial.println((millis() - relayStateMil) / 1000);
-  Serial.print("relay state: ");
-  Serial.println(relayState);
+  //  Serial.print("milis: ");
+  //  Serial.println(relayStateMil);
+  //  Serial.print("currentHour: ");
+  //  Serial.println(currentHour);
+  //  Serial.print("timer: ");
+  //  Serial.println((millis() - relayStateMil) / 1000);
+  //  Serial.print("relay state: ");
+  //  Serial.println(relayState);
 
-  if (!manualOverride && totalMinutes > 570 && currentHour < 23) {
+  if (!manualOverride && totalMinutes > 545 && currentHour < 23) {
     if (!relayState) {
       if ((millis() - relayStateMil) > RELAY_WAIT) {
         digitalWrite(RELAY_PIN, LOW);
