@@ -4,6 +4,17 @@
 #include <WiFiManager.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
+#include <ESP8266mDNS.h>
+#include <EEPROM.h>
+
+struct PersistedConfig {
+  uint32_t magic;
+  unsigned long relayDuration;
+  unsigned long relayWait;
+  int startMinutes;
+  int endMinutes;
+};
+static const uint32_t CONFIG_MAGIC = 0xC0FFEE01;
 
 // Static IP configuration
 IPAddress staticIP(192, 168, 1, 230);
@@ -35,6 +46,36 @@ unsigned long lastNtpUpdate = 0;
 const unsigned long NTP_UPDATE_INTERVAL = 300 * 60 * 1000; // cada 300 minutos
 int startMinutes = 545;
 int endMinutes = 1380;
+
+void loadConfig() {
+  PersistedConfig cfg;
+  EEPROM.begin(sizeof(PersistedConfig));
+  EEPROM.get(0, cfg);
+  EEPROM.end();
+  if (cfg.magic == CONFIG_MAGIC) {
+    RELAY_DURATION = cfg.relayDuration;
+    RELAY_WAIT = cfg.relayWait;
+    startMinutes = cfg.startMinutes;
+    endMinutes = cfg.endMinutes;
+    Serial.println("Config loaded from EEPROM.");
+  } else {
+    Serial.println("No valid config in EEPROM, using defaults.");
+  }
+}
+
+void saveConfig() {
+  PersistedConfig cfg;
+  cfg.magic = CONFIG_MAGIC;
+  cfg.relayDuration = RELAY_DURATION;
+  cfg.relayWait = RELAY_WAIT;
+  cfg.startMinutes = startMinutes;
+  cfg.endMinutes = endMinutes;
+  EEPROM.begin(sizeof(PersistedConfig));
+  EEPROM.put(0, cfg);
+  EEPROM.commit();
+  EEPROM.end();
+  Serial.println("Config saved to EEPROM.");
+}
 
 String getHTTPTime() {
   WiFiClient client;
@@ -214,6 +255,7 @@ void handleConfig() {
   //      resetWiFi();
   //    }
   //  }
+  saveConfig();
   server.send(200, "text/plain", "Configuration updated");
 }
 void handleManualOn() {
@@ -238,6 +280,8 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH); // Default OFF
 
+  loadConfig();
+
   //wifi manager
 
   WiFiManager wifiManager;
@@ -247,6 +291,7 @@ void setup() {
   //fetches ssid and pass from eeprom and tries to connect
   //if it does not connect it starts an access point with the specified name
   //and goes into a blocking loop awaiting configuration
+   Serial.println("Check wifimanager");
   wifiManager.autoConnect("Recirculador");
 
   wifiManager.setTimeout(180); // 3 minutos
@@ -310,11 +355,19 @@ void setup() {
   server.on("/manualOn", handleManualOn);
   server.on("/manualOff", handleManualOff);
   server.begin();
+
+  if (MDNS.begin("recirculador")) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("mDNS started: http://recirculador.local");
+  } else {
+    Serial.println("mDNS start failed");
+  }
 }
 
 void loop() {
   //delay(1000);
   server.handleClient();
+  MDNS.update();
   if (millis() - ledBlinkWait > (ledState ? 100 : 5000)) {
     digitalWrite(LED_PIN, ledState ? HIGH : LOW);
     ledState = !ledState;
@@ -329,7 +382,9 @@ void loop() {
     connTries++;
     if (connTries > 20)
     {
-      ESP.restart();
+      delay(60000);
+      connTries=0;
+      //ESP.restart();
     }
   }
   if (millis() - lastNtpUpdate > NTP_UPDATE_INTERVAL) {
