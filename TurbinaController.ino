@@ -32,8 +32,10 @@ ESP8266WebServer server(80);
 
 // Relay pin
 # define RELAY_PIN D3
+# define MAX_RELAY_PIN D2
 # define LED_PIN D4
 bool manualOverride = false;
+bool maxSpeedMode = false;
 bool relayState = false;
 bool ledState = false;
 unsigned long relayStartTime = 0;
@@ -152,6 +154,12 @@ void handleRoot() {
                 "<label class='form-check-label' for='manualOverride'>Modo automatico</label>"
                 "</div>"
                 "</div>"
+                "<div class='col-md-2'>"
+                "<div class='form-check form-switch'>"
+                "<input class='form-check-input' type='checkbox' " + (maxSpeedMode ? "checked = 'checked'" : "" ) + " role='switch' id='maxSpeed' onchange='toggleMaxSpeed(this.checked)'>"
+                "<label class='form-check-label' for='maxSpeed'>Velocidad maxima</label>"
+                "</div>"
+                "</div>"
                 "</div>"
                 "<br />"
                 "<div class='container'>"
@@ -205,6 +213,7 @@ void handleRoot() {
                 "updateInterval = setInterval(updateStatus, 2000);}).finally(hideSpinner);}"
                 "function toggleRelay(state) {clearInterval(updateInterval);showSpinner();fetch(state ? '/enable' : '/disable').then(() => updateStatus());}"
                 "function toggleManualOverride(state) {fetch(state ? '/manualOff' : '/manualOn');}"
+                "function toggleMaxSpeed(state) {fetch(state ? '/maxSpeedOn' : '/maxSpeedOff');}"
                 "function updateConfig() {"
                 "showSpinner();"
                 "const duration = document.getElementById('relayDuration').value * 60000;"
@@ -220,15 +229,33 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
+void turbineOn() {
+  // Engage the active-mode relay; release the other first with a 100 ms safety gap.
+  if (maxSpeedMode) {
+    digitalWrite(RELAY_PIN, HIGH);
+    delay(100);
+    digitalWrite(MAX_RELAY_PIN, LOW);
+  } else {
+    digitalWrite(MAX_RELAY_PIN, HIGH);
+    delay(100);
+    digitalWrite(RELAY_PIN, LOW);
+  }
+}
+
+void turbineOff() {
+  digitalWrite(RELAY_PIN, HIGH);
+  digitalWrite(MAX_RELAY_PIN, HIGH);
+}
+
 void handleEnable() {
-  digitalWrite(RELAY_PIN, LOW);
+  turbineOn();
   relayState = true;
   relayStateMil = millis();
   server.send(200, "text/plain", "Turbine enabled");
 }
 
 void handleDisable() {
-  digitalWrite(RELAY_PIN, HIGH);
+  turbineOff();
   relayState = false;
   relayStateMil = millis();
   server.send(200, "text/plain", "Turbine disabled");
@@ -260,7 +287,7 @@ void handleConfig() {
 }
 void handleManualOn() {
   manualOverride = true;
-  digitalWrite(RELAY_PIN, HIGH);
+  turbineOff();
   relayState = false;
   relayStateMil = millis();
   server.send(200, "text/plain", "Manual override enabled");
@@ -268,17 +295,31 @@ void handleManualOn() {
 
 void handleManualOff() {
   manualOverride = false;
-  digitalWrite(RELAY_PIN, LOW);
+  turbineOn();
   relayState = true;
   relayStateMil = millis();
   server.send(200, "text/plain", "Manual override disabled");
 }
 
+void handleMaxSpeedOn() {
+  maxSpeedMode = true;
+  if (relayState) turbineOn();
+  server.send(200, "text/plain", "Max speed enabled");
+}
+
+void handleMaxSpeedOff() {
+  maxSpeedMode = false;
+  if (relayState) turbineOn();
+  server.send(200, "text/plain", "Max speed disabled");
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
+  pinMode(MAX_RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH); // Default OFF
+  digitalWrite(MAX_RELAY_PIN, HIGH); // Default OFF
 
   loadConfig();
 
@@ -354,6 +395,8 @@ void setup() {
   server.on("/config", HTTP_POST, handleConfig);
   server.on("/manualOn", handleManualOn);
   server.on("/manualOff", handleManualOff);
+  server.on("/maxSpeedOn", handleMaxSpeedOn);
+  server.on("/maxSpeedOff", handleMaxSpeedOff);
   server.begin();
 
   if (MDNS.begin("recirculador")) {
@@ -420,7 +463,7 @@ void loop() {
   if (!manualOverride && totalMinutes > startMinutes && totalMinutes < endMinutes) {
     if (!relayState) {
       if ((millis() - relayStateMil) > RELAY_WAIT) {
-        digitalWrite(RELAY_PIN, LOW);
+        turbineOn();
         Serial.println("ON!");
         relayState = true;
         relayStateMil = millis();
@@ -428,7 +471,7 @@ void loop() {
     }
     if (relayState) {
       if ((millis() - relayStateMil) > RELAY_DURATION) {
-        digitalWrite(RELAY_PIN, HIGH);
+        turbineOff();
         Serial.println("OFF!");
         relayState = false;
         relayStateMil = millis();
@@ -437,7 +480,7 @@ void loop() {
     }
   } else {
     if (!manualOverride && relayState) {
-      digitalWrite(RELAY_PIN, HIGH);
+      turbineOff();
       Serial.println("OFF!");
       relayState = false;
     }
