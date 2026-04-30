@@ -38,10 +38,12 @@ bool manualOverride = false;
 bool maxSpeedMode = false;
 bool relayState = false;
 bool ledState = false;
+bool forcedManualRun = false;
 unsigned long relayStartTime = 0;
 unsigned long relayStateMil = 0;
 unsigned long RELAY_DURATION = 2 * 60 * 1000; // 2 minutes in milliseconds
 unsigned long RELAY_WAIT = 10 * 60 * 1000; // 10 minutes in milliseconds
+const unsigned long MAX_MANUAL_RUN_MS = 24UL * 60UL * 60UL * 1000UL; // 24 h cap en modo manual
 
 unsigned long ledBlinkWait = 0;
 unsigned long lastNtpUpdate = 0;
@@ -231,14 +233,21 @@ void handleRoot() {
 
 void turbineOn() {
   // Engage the active-mode relay; release the other first with a 100 ms safety gap.
+  // In regular mode, kickstart at max speed (D2) for KICKSTART_MS to spin up faster,
+  // then hand off to D3. In max mode there's nothing to kickstart — D2 is the target.
   if (maxSpeedMode) {
     digitalWrite(RELAY_PIN, HIGH);
     delay(100);
     digitalWrite(MAX_RELAY_PIN, LOW);
   } else {
-    digitalWrite(MAX_RELAY_PIN, HIGH);
+    const unsigned long KICKSTART_MS = 1500;
+    digitalWrite(RELAY_PIN, HIGH);
     delay(100);
-    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(MAX_RELAY_PIN, LOW);   // kickstart at max speed
+    delay(KICKSTART_MS);
+    digitalWrite(MAX_RELAY_PIN, HIGH);  // release D2
+    delay(100);
+    digitalWrite(RELAY_PIN, LOW);       // engage D3 (regular speed)
   }
 }
 
@@ -251,6 +260,9 @@ void handleEnable() {
   turbineOn();
   relayState = true;
   relayStateMil = millis();
+  // Si auto está activo, esta tanda manual debe durar RELAY_DURATION y luego volver al ciclo auto.
+  // Si auto está desactivado, queda prendido indefinidamente (cap de 24 h en el loop).
+  forcedManualRun = !manualOverride;
   server.send(200, "text/plain", "Turbine enabled");
 }
 
@@ -258,6 +270,7 @@ void handleDisable() {
   turbineOff();
   relayState = false;
   relayStateMil = millis();
+  forcedManualRun = false;
   server.send(200, "text/plain", "Turbine disabled");
 }
 
@@ -290,6 +303,7 @@ void handleManualOn() {
   turbineOff();
   relayState = false;
   relayStateMil = millis();
+  forcedManualRun = false;
   server.send(200, "text/plain", "Manual override enabled");
 }
 
@@ -460,29 +474,50 @@ void loop() {
   //  Serial.print("relay state: ");
   //  Serial.println(relayState);
 
-  if (!manualOverride && totalMinutes > startMinutes && totalMinutes < endMinutes) {
-    if (!relayState) {
-      if ((millis() - relayStateMil) > RELAY_WAIT) {
-        turbineOn();
-        Serial.println("ON!");
-        relayState = true;
-        relayStateMil = millis();
-      }
-    }
-    if (relayState) {
+  if (!manualOverride) {
+    // ----- Modo automático -----
+    if (forcedManualRun && relayState) {
+      // Tanda forzada por click a Prender: corre RELAY_DURATION ignorando el horario.
       if ((millis() - relayStateMil) > RELAY_DURATION) {
         turbineOff();
-        Serial.println("OFF!");
+        Serial.println("OFF! (forced run done)");
         relayState = false;
+        forcedManualRun = false;
         relayStateMil = millis();
       }
-
+    } else if (totalMinutes > startMinutes && totalMinutes < endMinutes) {
+      // Dentro del horario operativo: ciclo normal.
+      if (!relayState) {
+        if ((millis() - relayStateMil) > RELAY_WAIT) {
+          turbineOn();
+          Serial.println("ON!");
+          relayState = true;
+          relayStateMil = millis();
+        }
+      } else {
+        if ((millis() - relayStateMil) > RELAY_DURATION) {
+          turbineOff();
+          Serial.println("OFF!");
+          relayState = false;
+          relayStateMil = millis();
+        }
+      }
+    } else {
+      // Fuera de horario operativo y sin tanda forzada: forzar apagado.
+      if (relayState) {
+        turbineOff();
+        Serial.println("OFF! (out of hours)");
+        relayState = false;
+      }
     }
   } else {
-    if (!manualOverride && relayState) {
+    // ----- Modo manual -----
+    // Si está prendido, queda prendido hasta que se apague o se cumpla el cap de 24 h.
+    if (relayState && (millis() - relayStateMil) > MAX_MANUAL_RUN_MS) {
       turbineOff();
-      Serial.println("OFF!");
+      Serial.println("OFF! (24h manual cap)");
       relayState = false;
+      relayStateMil = millis();
     }
   }
   //  if (manualOverride)
